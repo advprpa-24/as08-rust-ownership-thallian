@@ -4,23 +4,35 @@ use std::collections::HashSet;
 /// Evaluates a term:
 /// In order to simplify the term as much as possible, we use a call-by-value strategy.
 /// We even evaluate the body of an abstraction eagerly.
-/// 
+///
 /// The evaluation rules are as follows:
 /// - A variable evaluates to itself.
 /// - An abstraction evaluates to itself, even the body is eagerly evaluated.
-/// - An application evaluates the left side, then the right side, 
+/// - An application evaluates the left side, then the right side,
 ///   and applies the left side to the right side by substitution.
-///   Examples: 
+///   Examples:
 ///   `x` evaluates to `x`.
 ///   `λx. x` evaluates to `λx. x`.
 ///   `(λx. x) y` evaluates to `y`.
 ///   `(λx. (λy. x)) z` evaluates to `λy. z`.
 ///   `(λx. (λy. x)) a b` evaluates to `a`.
 pub fn eval(term: &Term) -> Term {
-    term.clone()
-    // TODO: "Implement the eval function")
+    match term {
+        Term::Var(_) => term.clone(),
+        Term::Abs(var, body) => abs(var, eval(body)),
+        Term::App(left, right) => {
+            let left_eval = eval(left);
+            let right_eval = eval(right);
+            match left_eval {
+                Term::Abs(param, body) => {
+                    let substituted = substitute(&body, &param, &right_eval);
+                    eval(&substituted)
+                }
+                _ => Term::App(Box::new(left_eval), Box::new(right_eval)),
+            }
+        }
+    }
 }
-
 
 /// Replace all occurrences of a variable `var` in a `term` with `replacement`.
 pub fn substitute(term: &Term, var: &str, replacement: &Term) -> Term {
@@ -174,6 +186,44 @@ mod tests {
         let term = app(abs("x", app(abs("y", var("y")), var("x"))), var("z"));
         let evaluated = eval(&term);
         let expected = var("z");
+        assert_eq!(evaluated, expected);
+    }
+
+    #[test]
+    fn test_church_succ_same() {
+        // 𝜆n. 𝜆f. 𝜆x. f (n f x)
+        // should not be reduced more
+        let term = abs(
+            "n",
+            abs(
+                "f",
+                abs("x", app(var("f"), app(app(var("n"), var("f")), var("x")))),
+            ),
+        );
+
+        let evaluated = eval(&term);
+        let expected = term;
+        assert_eq!(evaluated, expected);
+    }
+
+    #[test]
+    fn test_haskell_programming_from_first_principles() {
+        // (𝜆𝑥.𝜆𝑦.𝜆𝑧.𝑥𝑧(𝑦𝑧))(𝜆𝑚.𝜆𝑛.𝑚)(𝜆𝑝.𝑝) -> 𝜆𝑧.𝑧
+        let term = app(
+            app(
+                abs(
+                    "x",
+                    abs(
+                        "y",
+                        abs("z", app(app(var("x"), var("z")), app(var("y"), var("z")))),
+                    ),
+                ),
+                abs("m", abs("n", var("m"))),
+            ),
+            abs("p", var("p")),
+        );
+        let evaluated = eval(&term);
+        let expected = abs("z", var("z"));
         assert_eq!(evaluated, expected);
     }
 }
